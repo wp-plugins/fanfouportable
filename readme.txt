@@ -3,7 +3,7 @@ Contributors: JinnLynn
 Tags: fanfou,  notify, integration, post, 
 Requires at least: 2.5
 Tested up to: 2.6
-Stable tag: 0.1
+Stable tag: 0.2
 
 == Description ==
 

@@ -4,13 +4,13 @@ Plugin Name: FanfouPortable
 Plugin URI: http://jeeker.net/projects/fanfouportable/
 Description: A simple tool about Fanfou,create new status when you publish a new post,and get the recent statuses from Fanfou.
 Author: JinnLynn
-Version: 0.1
+Version: 0.2
 Author URI: http://jeeker.net/
 */
 
-require_once(ABSPATH . WPINC . '/class-snoopy.php');
+define('FANFOUPORTABLE_VERSION','0.2');
 
-define('FANFOUPORTABLE_VERSION','0.1');
+require_once(ABSPATH . WPINC . '/class-snoopy.php');
 
 class FanfouPortable {
     private $Snoop;
@@ -21,13 +21,21 @@ class FanfouPortable {
                                      'update_interval'  => 1800,
                                      'last_update_time' => 0,
                                      'last_update_hash' => '',
-                                     'last_user_hash'   => '');
+                                     'last_user_hash'   => '',
+                                     'widget_title'     => 'Fanfou',                     //@since 0.2
+                                     'widget_limit'     => 5 );                          //@since 0.2
     private $Options;
 
+    /**
+     * 构造函数，获取配置、处理POST动作等等
+     * 
+     * @since 0.1
+     */
     function __construct() {
 
         $this->ParseOptions();
         $this->UpdateSchedule();
+        $this->InitWidget();
         
         if ( $_POST['ffp_action']=='login_test') {
             $this->Options['username'] = trim(stripslashes($_POST['username']));
@@ -61,6 +69,11 @@ class FanfouPortable {
         
     }
 
+    /**
+     * 保存配置
+     *
+     * @since 0.1
+     */
     function SaveOptions() {
         foreach ($this->Options as $option_key => $option_value) {
             if (!array_key_exists($option_key, $this->DefaultOptions))
@@ -69,6 +82,11 @@ class FanfouPortable {
         update_option('fanfouportable_options', $this->Options);
     }
 
+    /**
+     * 获取配置
+     *
+     * @since 0.1
+     */
     function ParseOptions() {
         $old_options = get_option('fanfouportable_options');
         if (is_array($old_options)) {
@@ -78,6 +96,11 @@ class FanfouPortable {
         }
     }
     
+    /**
+     * 更新配置
+     *
+     * @since 0.1
+     */
     function UpdateOptions() {
         $post_options = $_POST;
         foreach ( $post_options as $key => $value ) {
@@ -99,9 +122,14 @@ class FanfouPortable {
             $this->ResetCache();
     }
 
+    /**
+     * 初始化Snoopy
+     *
+     * @since 0.1
+     */
     function InitSnoopy() {
         $this->Snoop = NULL;
-        $this->Snoop = &new Snoopy;
+        $this->Snoop = new Snoopy();
         $this->Snoop->agent = 'FanfouPortable - http://jeeker.net/';
         $this->Snoop->rawheaders = array('X-Twitter-Client'         => 'FanfouPortable',
                                          'X-Twitter-Client-Version' => FANFOUPORTABLE_VERSION,
@@ -111,15 +139,23 @@ class FanfouPortable {
         $this->Snoop->pass = $this->Options['password'];
     }
 
+    /**
+     * 登录Fanfou
+     *
+     * @since 0.1
+     * @return bool
+     */
     function Login() {
         $this->InitSnoopy();
         $this->Snoop->fetch('http://api.fanfou.com/statuses/user_timeline.xml');
         return (boolean) strpos($this->Snoop->response_code, '200');
     }
 
-    /*****************************************************************************
-    * Update
-    ******************************************************************************/
+    /**
+     * 更新计划
+     *
+     * @since 0.1
+     */
     function UpdateSchedule() {
         if (($this->Options['last_update_time'] + $this->Options['update_interval']) < time()) {
             wp_clear_scheduled_hook('fanfouportable_update_schedule');
@@ -127,6 +163,11 @@ class FanfouPortable {
         }
     }
 
+    /**
+     * 更新，获取Fanfou上的最新状态
+     *
+     * @since 0.1
+     */
     function Update() {
         if (empty($this->Options['username']))
             return $this->ResetCache();
@@ -146,6 +187,13 @@ class FanfouPortable {
         update_option('fanfouportable_cache', $cache);
     }
     
+    /**
+     * 解析XML，需要SimpleXML支持
+     *
+     * @since 0.1
+     * @param string $xml_str
+     * @return null | array
+     */
     function ParseXMLResults($xml_str) {
         $xml = @simplexml_load_string($xml_str);
         if (!is_object($xml))
@@ -166,15 +214,23 @@ class FanfouPortable {
         return $cache;
     }
     
+    /**
+     * 重置缓存
+     *
+     * @since 0.1
+     */
     function ResetCache() {
         $this->Options['last_update_hash'] = '';
         update_option('fanfouportable_cache', '');
         $this->Options['last_user_hash'] = md5($this->Options['username']);
     }
 
-    /*****************************************************************************
-    * Notify
-    ******************************************************************************/
+    /**
+     * 日志发布通告计划
+     *
+     * @since 0.1
+     * @param int $post_id
+     */
     function NotifySchedule($post_id = 0) {
         if ($this->Options['notify_enable'] == 1) {
             $args = array($post_id);
@@ -182,6 +238,12 @@ class FanfouPortable {
         }
     }
 
+    /**
+     * 日志发布通告
+     *
+     * @since 0.1
+     * @param int $post_id
+     */
     function Notify($post_id = 0) {
         if (!$this->Options['notify_enable'] 
             || get_post_meta($post_id, '_ffp_notified', true) == '1'
@@ -207,6 +269,13 @@ class FanfouPortable {
         $this->Update();
     }
 
+    /**
+     * 往Fanfou上发布信息
+     *
+     * @since 0.1
+     * @param string $text
+     * @return bool
+     */
     function Post($text = '') {
         if (empty($this->Options['username']) || empty($this->Options['password']) || empty($text))
             return false;
@@ -219,9 +288,13 @@ class FanfouPortable {
         return false;
     }
 
-    /*****************************************************************************
-    * Display
-    ******************************************************************************/
+    /**
+     * 获取Fanfou上策最新状态
+     *
+     * @since 0.1
+     * @param string $args 参数
+     * @return null | string
+     */
     function GetPost($args='') {
         $defaults = array('limit'      => 10,
                           'noposttext' => 'None.',
@@ -234,7 +307,7 @@ class FanfouPortable {
             $args['limit'] = 1;
         } else if (intval($args['limit']) > 20)
             $args['limit'] = 20;
-        $output = "\n<!-- Generated by FanfouPortable v" . FANFOUPORTABLE_VERSION . " - http://jeeker.net/jeeker/projeces/fanfouportable/ -->\n";
+        $output = "\n<!-- Generated by FanfouPortable v" . FANFOUPORTABLE_VERSION . " - http://jeeker.net/jeeker/projects/fanfouportable/ -->\n";
         $cache = get_option('fanfouportable_cache');
         $statuses = $cache['statuses'];
         if(empty($statuses)) {
@@ -255,20 +328,87 @@ class FanfouPortable {
         return $output;
     }
 
+    /**
+     * 格式化输出时间
+     *
+     * @since 0.1
+     * @param int $timestamp
+     * @param string $dateformat
+     * @return string
+     */
     function OutTime($timestamp, $dateformat) {
         $GMTOffset = get_option('gmt_offset');
         $LocalTime = $timestamp + 3600 * $GMTOffset;
         return date($dateformat, $LocalTime);
     }
     
-    /*****************************************************************************
-    * Admin
-    ******************************************************************************/
+    /**
+     * 初始化Widget
+     *
+     * @since 0.2
+     */
+    function InitWidget() {
+        $widget_ops = array('classname' => 'widget_fanfouportable', 'description' => __( "Fanfou最新状态") );
+        wp_register_sidebar_widget('fanfouportable', __('FanfouPortable'), array($this, 'ShowWidget'), $widget_ops);
+        wp_register_widget_control('fanfouportable', __('FanfouPortable'), array($this, 'ControlWidget'));
+    }
     
+    /**
+     * Widget配置
+     *
+     * @since 0.2
+     */
+    function ControlWidget() {
+        if($_POST['fanfouportable_widget_submit'] == 1) {
+            $this->Options['widget_title'] = strip_tags(stripslashes($_POST['fanfouportable_widget_title']));
+            $this->Options['widget_limit'] = intval(strip_tags(stripslashes($_POST['fanfouportable_widget_limit'])));
+            if ($this->Options['widget_limit'] > 20) $this->Options['widget_limit'] = 20;
+            if ($this->Options['widget_limit'] < 0)$this->Options['widget_limit'] = 1;
+        }
+        $widget_title = $this->Options['widget_title'];
+        $widget_limit = $this->Options['widget_limit'];
+        echo '
+            <p><label for="fanfouportable_widget_title">Title: <input class="widefat" style="width:200px;" id="fanfouportable_widget_title" name="fanfouportable_widget_title" type="text" value="' . $widget_title . '" /></label></p>
+            <p><label for="fanfouportable_widget_limit">Number: <input class="widefat" style="width:35px;" id="fanfouportable_widget_limit" name="fanfouportable_widget_limit" type="text" value="' . $widget_limit . '" /></label></p>
+            <input type="hidden" id="fanfouportable_widget_submit" name="fanfouportable_widget_submit" value="1" />
+        ';
+    }
+    
+    /**
+     * 显示Widget
+     *
+     * @since 0.2
+     * @param array $widget_args
+     * @param int $number
+     */
+    function ShowWidget( $widget_args, $number = 1 ) {
+        extract($widget_args);
+        $title = $this->Options['widget_title'];
+        $limit = $this->Options['widget_limit'];
+        
+        echo $before_widget;
+        echo $before_title . $title . $after_title;
+        echo "\n" . '<ul>';
+        $this->GetPost('limit=' . $limit);
+        echo '</ul>' . "\n";
+        echo $after_widget;
+    }
+    
+    /**
+     * 添加管理菜单到WP
+     *
+     * @since 0.1
+     */
     function AdminMenu() {
         add_options_page('FanfouPortable', 'FanfouPortable', 'manage_options', 'fanfouportable_admin_options_page', array(&$this, 'OptionsPage'));
     }
 
+    /**
+     * 在管理页面显示Fanfou最新状态
+     *
+     * @since 0.1
+     * @return string
+     */
     function StatusForConfigPage() {
         $cache = get_option('fanfouportable_cache');
         if (empty($cache))
@@ -285,6 +425,11 @@ class FanfouPortable {
         return $output;
     }
 
+    /**
+     * 管理页面内容
+     *
+     * @since 0.1
+     */
     function OptionsPage() {
         if (isset($_POST['update_options'])) {
             $this->UpdateOptions();
@@ -401,9 +546,26 @@ class FanfouPortable {
     }
 }
 
-//Initialize FanfouPortable
-$FanfouPortable = new FanfouPortable();
+global $FanfouPortable;
 
+/**
+ * 初始化FanfouPortable
+ *
+ * @since 0.2
+ */
+function FFP_Init() {
+    global $FanfouPortable;
+    $FanfouPortable = new FanfouPortable();
+}
+add_action('plugins_loaded', 'FFP_Init');
+
+/**
+ * 获取Fanfou状态
+ *
+ * @since 0.1
+ * @param string $args
+ * @return null | string 当参数中echo=1时直接输出，否则返回HTML代码
+ */
 function FFP_GetPost($args='') {
     global $FanfouPortable;
     $FanfouPortable->GetPost($args);
